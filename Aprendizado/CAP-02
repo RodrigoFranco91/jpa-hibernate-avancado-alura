@@ -1,0 +1,145 @@
+Neste capítulo realizamos consultas mais avançadas.
+
+
+Vamos aprender a fazer consultas com funções de agregação (soma, media, etc..). 
+Tenha em mente que podemos usar na JPQL as funções genéricas a todos os bancos relacionais, como SUM, AVG, MAX, MIN!! Quando usamos
+algo específico de um banco de dados a JPA vai repassar isso ao banco, se ele souber fazer vai rodar, caso contrário dará um erro!
+Mas o problema de usar uma função específica é que você fica preso ao banco, caso mude terá que mudar o código!
+
+Vejas as consultas que vamos fazer:
+
+- Valor total de vendas de todos os pedidos:
+
+1) Na classe PedidoDao criei o método valorTotalVendido(), que vai receber nada e vai retornar um BigDecima. Veja
+
+	public BigDecimal valorTotalVendido() {
+		String jpql = "SELECT SUM(p.valorTotal) FROM Pedido p";
+		return this.em.createQuery(jpql, BigDecimal.class)
+				.getSingleResult();
+	}
+
+2) Agora na classe TesteCadastroDePedido, dentro do método main() após o commit, o código que vai consumir (fazer a 
+consulta):
+
+		
+	BigDecimal totalVendido = pedidoDao.valorTotalVendido();
+	System.out.println("Valor total de vendas:" + totalVendido);
+	
+
+- Gerando relatório (tem que exibir, todos produtos, quantidade vendida e data da última venda do produto):
+
+1) Na classe PedidoDao criar o método relatorioDeVendas() que não vai receber nada e vai retornar algo desconhecido (sabemos que não
+é uma entidade específica, pois cada campo do relatório é de uma entidade diferente). Então a pricipio vamos fazer esse método retornar
+uma Lista de array de object. Veja como ficou:
+
+	//Aqui teremos retorno de várias entidades (não é por exemplo só de Pedido)
+	public List<Object[]> relatorioDeVendas(){
+		
+		String jpql = "SELECT produto.nome, SUM(item.quantidade), MAX(pedido.data) FROM Pedido pedido JOIN pedido.itensPedidos 
+		item 
+		JOIN item.produto produto GROUP BY produto.nome ORDER BY item.quantidade DESC";
+		return this.em.createQuery(jpql, Object[].class)
+				.getResultList();
+	}
+	
+2) Cria na classe TesteCadastroDePedido, dentro do método main() após o commit, o código que vai consumir (fazer a 
+consulta):
+
+
+	List<Object[]> relatorioDeVendas = pedidoDao.relatorioDeVendas();
+	relatorioDeVendas.forEach(o -> System.out.println(o[0] + " " + o[1] + " "+ o[2]));
+	
+	
+Mas é muito estranho devolver um Array de Object! Poderiamos melhorar o código do passo 1. Ficando assim:
+
+Crie uma classe para representar o relátório e as colunas do relatório serão atributos dessa classe. Veja como ficou:
+
+	public class RelatorioDeVendasVo {
+		
+		private String nomeProduto;
+		private Long quantidadeVendida;
+		private LocalDate dataUltimaVenda;
+		
+		
+		public RelatorioDeVendasVo(String nomeProduto, Long quantidadeVendida, LocalDate dataUltimaVenda) {
+
+			this.nomeProduto = nomeProduto;
+			this.quantidadeVendida = quantidadeVendida;
+			this.dataUltimaVenda = dataUltimaVenda;
+		}
+
+
+		public String getNomeProduto() {
+			return nomeProduto;
+		}
+
+
+		public Long getQuantidadeVendida() {
+			return quantidadeVendida;
+		}
+
+
+		public LocalDate getDataUltimaVenda() {
+			return dataUltimaVenda;
+		}
+
+	}
+
+Tenha em mente que essa classe precisa ter um construtor compativel com o que o JPQL vai gerar!
+	
+Agora o método relatorioDeVendas vai retornar uma lista de RelatorioDeVendasVo, mas como vamos fazer o JPQL, pois nele só podemos
+colocar classes do tipo Entity (gerenciadas pela JPA) e a classe RelatorioDeVendasVo não é. Para isso usamos o comando new() em cima
+do full name da classe. Veja:
+
+	public List<RelatorioDeVendasVo> relatorioDeVendas(){
+		
+		String jpql = "SELECT new br.com.alura.loja.vo.RelatorioDeVendasVo(produto.nome, SUM(item.quantidade), 
+		MAX(pedido.data)) FROM Pedido pedido JOIN pedido.itensPedidos item JOIN item.produto produto GROUP BY produto.nome 
+		ORDER BY item.quantidade DESC";
+		return this.em.createQuery(jpql, RelatorioDeVendasVo.class)
+				.getResultList();
+	}
+
+}
+
+Veja o código que agora testa:
+
+		List<RelatorioDeVendasVo> relatorioDeVendas = pedidoDao.relatorioDeVendas();
+		relatorioDeVendas.forEach(r -> System.out.println(r.getNomeProduto() + " " + r.getQuantidadeVendida() + " " + 
+		r.getDataUltimaVenda() ));
+		
+		
+	
+Vamos ver como fazer consultas com Named Queries.
+
+Desta forma a consulta não fica na classe DAO e sim na entidade. Com JPQL para fazer uma busca de Produto pelo seu nome de seua
+categoria antes estavamos com o seguinte método na classe ProdutoDao:
+
+	public List<Produto> buscarPorNomeDaCategoria(String nome) {
+		String jpql = "SELECT p FROM Produto p WHERE p.categoria.nome = :nome";
+		return em.createQuery(jpql, Produto.class)
+				.setParameter("nome", nome)
+				.getResultList();
+	}
+	
+	
+Usando Named Querie (Teremos que alterar a classe Produto):
+
+	@Entity
+	@Table(name = "produtos")
+	@NamedQuery(name =  "Produto.produtosPorCategoria", query = "SELECT p FROM Produto p WHERE p.categoria.nome = :nome")
+	public class Produto {}
+	
+Veja que em cima da classe adicionamos a anotação @NamedQuery com os argumentos de name para identificar e a query que é a JPQL.
+
+E para usar, o que devemos fazer? Lá na classe ProdutoDao vamos chamar essa NamedQuery pelo seu nome, ficando assim:
+
+	public List<Produto> buscarPorNomeDaCategoriaNamedQuery(String nome) {
+		return em.createNamedQuery("Produto.produtosPorCategoria", Produto.class)
+				//Setando a variável lá da NamedQuery
+				.setParameter("nome", nome)
+				.getResultList();
+	}
+	
+Agora basta chamar o método buscarPorNomeDaCategoriaNamedQuery() que teremos o resultado.
+

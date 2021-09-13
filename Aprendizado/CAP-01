@@ -1,0 +1,159 @@
+Neste capitulo aprendemos a fazer outros tipos de mapamento. Vamos aproveitar o Projeto do curso JPA anterior.
+
+
+No nosso projeto agora vamos ter o modelo Pedido e Cliente. E há uma relção entre eles, onde Pedido tem um Cliente, mas Cliente pode
+ter vários pedidos, veja:
+
+	Cliente ---TEM---> N Pedido
+	Cliente 1 <--TEM--- Pedido
+	
+Se pedido está do lado N é ele que terá um atributo do tipo Cliente que será anotado com @ManyToOne. 
+Então na classe Pedido havéra o atributo Cliente cliente que no banco será chamado de cliente_id.
+
+
+Há ainda otura relação, no caso Pedido pode ter vários Produto, e Produto pode estar em vários pedidos:
+
+	Produto ---TEM---> N Pedido
+	Produto N <--TEM--- Pedido
+	
+Quando há um relacionamento N:N sabemos que no banco de dados é criado uma tabela do relacionamento, por padrão junta-se o nome
+das duas tabelas (pontas), no caso ficaria produto_pedido, mas podemos dar o nome que quisermos através da anotação JoinTable(name=).
+A tabela gerada por padrão tem o ID (chave primária) de cada tabela envolvida, no caso teria um produto_id e um pedido_id.
+
+Nesse tipo de relacionamento, é usado a anotação @ManyToMany, e o atributo é sempre do tipo de Collection, normalmente lista.
+
+Mas no nosso caso vamos precisar de mais dados na tabela de relacionamento, alem das chaves primarias de cada tabela envolvida, vamos
+querer guardar a quantidade de cada produto e o preço atual do produto (pois amanhã o preço muda), portanto vamos ter que criar uma
+Classe que representa essa tabela de relacionamento N:N, essa classe se chamará ItemPedido.
+
+DICA: Quando a nossa tabela de relação gerada a partir de um N:N tiver atributos o aconselhavel é criamos uma classe para 
+representa-la e quebrar o relacionamento N:N para 1:n dos dois lados, veja como ficará:
+
+	Produto 1 <---TEM---> N ItemPedido N <---tem---> 1 Pedido
+
+Como ItemPEdido está do lado N dos dois relacionamentos, a classe ItemPedido tera dois atributos anotados com @ManyToOne, um do tipo
+Produto e outro do tipo Pedido
+
+
+Tenha em mente: Até o momento apenas o lado N da relação ganhava um atributo que apontava para a outra Classe/Tabela, pois isso é
+obrigatório, pois o lado N sempre ganha a chave estrangeira! Mas nada impede do lado 1 do relacionamento também ter um atributo 
+apontando para a outra Classe/Tabela e quando fazemos isso dizemos que temos um relacionamento Bidirecional, ou seja, ous dois lados
+chegou na outra Clase/Entidade!
+
+Cuidado com o Relacionamentro Bidirecional, pois temos que fazer uma configuração a mais, não basta criar somente o atributo do tipo
+da outra Entidade/Classe, pois se criamos somente o atributo o Hibernate vai pensar que é um novo relacionamento e vai criar outras
+tabelas! Temos que ter em mente que Relacionamento Bidirecional é o MESMO relacionamento, mas que os dois lados chegam no outro 
+lado! Para indicar isso ao hibernate usamos o argumento mappedBy, ou seja, vamos indicar que a relação já está mapeada. O argumento
+mappedBy vai na anotação de Cardionalidade de @OneToMany e seu valor é sempre o atributo que já está mapeando o relacionamento 
+(será o nome do atributo da Cardionalidade ao contrária - da cardionalidade @ManyToOne)
+
+
+
+Dicas para relacionamentos complexos:
+
+1- Quando temos um relacionamento Bidirecional temos que lembrar de preencher os objetos que representam os dois lados. Por 
+exemplo neste caso, na classe Pedido criamos o método:
+
+	public void adicionarItem(ItemPedido item) {
+		item.setPedido(this);
+		this.itensPedidos.add(item);
+	}
+	
+Pois Pedido está do lado 1 da relação, então ele tem uma lista da outra Classe/Tabela, logo temos que preencher essa lista. E 
+podemos aproveitar o mesmo método para preencher o outro lado, foi o que fizemos com item.setPedido(this);
+
+Temos o atributo valorTotal que é referente a quantidade e o valor dos itens adicionados na lista, então nesse momento podemos 
+também mudar esse valor, adicionando o código this.valorTotal = this.valorTotal.add(item.getValor()); Ficando assim:
+
+	public void adicionarItem(ItemPedido item) {
+		item.setPedido(this);
+		this.itensPedidos.add(item);
+		this.valorTotal.add(item.getValor());
+	}
+
+No código anterior usamos o método getValor() de um objeto do tipo ItemPedido, então na classe ItemPedido tivemos que fazer:
+
+	public BigDecimal getValor() {
+		return precoUnitario.multiply(new BigDecimal(quantidade));
+	}
+
+2- Quando o atributo é do tipo Collection (OneToMany) é ideal já inicializarmos o mesmo, para não ter que verificar se a lista já 
+foi instanciada, por exemplo:
+
+	@OneToMany(mappedBy = "pedido")
+	private List<ItemPedido> itensPedidos = new ArrayList<>();
+	
+3- Relacionamento N:N onde haverá atributos da relaçao o ideal é criar uma classe intermediaria e quebrar em 2 relacionamentos 1:N
+
+4- Em relacionamento Bidirecional temos que usar o mappedBy
+
+5- Use o construtor de um objeto para incializar o valor de atributos, mesmo que esse valor não venha nos argumentos do construtor,
+pois as vezes recebemos um Objeto via argumento e através dele é que vamos extrair nosso valor. Fizemos isso para setar 
+precoUnitario, pois o contrutor de ItemPedido recebia via agumento Produto e através do Produto extraimos o preço.
+
+
+
+Testando o relacionamento bidirecional:
+
+Para testar criamos a classe TesteCadastroDePedido. Veja como ela ficou:
+
+	public class TesteCadastroDePedido {
+		
+		public static void main(String[] args) {
+			
+			populaBancoDeDados();
+			
+			EntityManager em = JPAUtil.getEntityManager();
+			ProdutoDao produtoDao = new ProdutoDao(em);
+			ClienteDao clienteDao = new ClienteDao(em);
+			Produto produto = produtoDao.buscarPorId(1l);
+			Cliente cliente = clienteDao.buscarPorId(1l);
+			
+			em.getTransaction().begin();
+			
+			Pedido pedido = new Pedido(cliente);
+			pedido.adicionarItem(new ItemPedido(10, pedido, produto));
+			
+			PedidoDao pedidoDao = new PedidoDao(em);
+			pedidoDao.cadastrar(pedido);
+			
+			em.getTransaction().commit();
+			em.close();
+		}
+
+		private static void populaBancoDeDados() {
+			Categoria celulares = new Categoria("CELULARES");
+			Produto celular = new Produto("Xiaomi Redmi", "Muito legal", new BigDecimal("800"), celulares );
+			Cliente cliente = new Cliente("Rodrigo", "123456789");
+			
+			
+			EntityManager em = JPAUtil.getEntityManager();
+			ProdutoDao produtoDao = new ProdutoDao(em);
+			CategoriaDao categoriaDao = new CategoriaDao(em);
+			ClienteDao clienteDao = new ClienteDao(em);
+			
+			em.getTransaction().begin();
+			
+			categoriaDao.cadastrar(celulares);
+			produtoDao.cadastrar(celular);
+			clienteDao.cadastrar(cliente);
+			
+			em.getTransaction().commit();
+			em.close();
+		}
+	}
+
+Nesta classe o primeiro passo foi chamar o metodo populaBancoDeDados() que vai criar um produto (com categoria) e um cliente.
+O segundo passo foi buscar um Produto e um Cliente (ambos através do ID 1). Tendo esses dois criamos um Pedido!
+Tenha em mente que tivemos que seguir esses passos, pois não podemos salvar objetos Transientes !!!
+
+Embora não tenha dado erro não conseguimos o resultado esperado! Pois a tabela pedido_item ficou tem dados! Ou seja, temos também
+que criar a clase ItemPedidoDao e salvar seus dados! Mas para o nosso caso podemos usar outra estratégia, pois ItemPedido só vai
+existir quando existir um Pedido (há uma dependencia), então podemos configurar para o Hibernate ao salvar o Pedido também salvar
+o ItemPedido, e qual o atributo de Pedido quie aponta para ItemPedido? É o atributo itensPedidos, então será nele que vamos fazer a 
+configuração, esse atributo deve ficar assim (atributo cascade que que queremos):
+
+	@OneToMany(mappedBy = "pedido", cascade = CascadeType.ALL)
+	private List<ItemPedido> itensPedidos = new ArrayList<>();
+
+Tenha em mente: Qual a utilidade do parâmetro cascade? Propagar as operações realizadas em uma entidade em seu relacionamento

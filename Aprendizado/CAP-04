@@ -1,0 +1,173 @@
+Neste capitulo falamos sobre o Criteria API. Este nos permite fazer consultas dinamicas/flexível!
+
+
+Pense no seguinte cenário: quero fazer uma busca de Produto (pode retornar mais de um) atavés de seu nome, preço e dataCadastro. Só que
+não quero que seja obrigatório que o usuário informe esses 3 dados, ele pode inserir os 3, ou somente 2 ou 1. Como vamos fazer isso?
+
+Siga o passo a passo a seguir para resolver do jeito difícil (Vários if's e concatenando o JPQL) e com uso de uma gambiarra:
+
+1) Na classe ProdutoDao crie o método buscarPorParametros(), esse método retornará uma lista de Produto e recebera via argumento
+os parâmetros de buscas;
+
+2) Veja como ficou:
+
+	//Busca mais flexivel, pode ser realizada por diversos parâmetros (todos são opcionais).
+	//Essa primeira soluçao é no modo dificil, com gambiarra!!!
+	//A gambiarra 1=1 é para deixar o WHERE na primeira linha e sempre trazer todos itens!
+	public List<Produto> buscarPorParametros(String nome, BigDecimal preco, LocalDate dataCadasto) {
+		String jpql = "SELECT p FROM Produto p WHERE 1=1";
+		if(nome != null && !nome.trim().isEmpty()) {
+			jpql = " AND p.nome = :nome";
+		}
+		if(preco != null) {
+			jpql = " AND p.preco = :preco";
+		}
+		if(dataCadasto != null) {
+			jpql = " AND p.dataCadasto = :dataCadasto";
+		}
+		
+		//Para preparar a query vou ter que fazer vários if's e por isso
+		// devo criar uma váriavel para guardar a query!
+		TypedQuery<Produto> query = this.em.createQuery(jpql, Produto.class);
+		
+		if(nome != null && !nome.trim().isEmpty()) {
+			query.setParameter("nome", nome);
+		}
+		if(preco != null) {
+			query.setParameter("preco", preco);
+		}
+		if(dataCadasto != null) {
+			query.setParameter("dataCadasto", dataCadasto);
+		}
+
+		return query.getResultList();
+	}
+
+
+
+
+Siga o passo a passo a seguir para resolver do jeito ideal, usando Criteria API:
+
+1) Na classe ProdutoDao crie o método buscarPorParametros(), esse método retornará uma lista de Produto e recebera via argumento
+os parâmetros de buscas;
+
+2) Neste método precisamos criar um CriteriaQuery, mas quem sabe criá-lo é um CriteriaBuilder. Então vamos criar um CriteriaBuilder
+para depois criar o CriteriaQuery. Veja como ficou esse trecho:
+
+		CriteriaBuilder builder = em.getCriteriaBuilder();
+		CriteriaQuery<Produto> query = builder.createQuery(Produto.class);
+
+Criamos um CriteriaQuery do tipo Produto, pois o seu retorno será itens do tipo Produto.
+
+3) Agora com a referencia query vamos criando as partes da query, primeiro podemos criar o FROM (quando o omitidos o SELECT o mesmo
+terá o mesmo valor do FROM):
+
+		//Indica de onde será o FROM da query "JPQL"
+		//Por padrão o SELECT é igual o FROM, se fosse diferente poderiamos mudar com query.select()
+		Root<Produto> from = query.from(Produto.class);
+		
+4) Agora podemos criar o trecho do filtro, é onde vamos colocando os AND. Para isso temos que usar o build novamente para criar um 
+and:
+
+		Predicate filtros = builder.and();
+		
+5) Agora sim vamos adicionar os valores ao AND. O método que vai adicionar o valor ao and precisa receber dois argumentos, o primeiro
+é o atual valor do and (ele precisa disso para ir concatenando valores) e o segundo seŕa o tipo de operação (igualdade, maior, 
+menor. Isso junto com o valor em si que será pego através da referencia from):
+
+		if(nome != null && !nome.trim().isEmpty()) {
+			//Passo o valor atual do filtro (primeiro argumento)
+			//Depois passo o que eu quero adicionar ao filtro que estou construindo, por ser = uso o metodo equal()
+			filtros = builder.and(filtros, builder.equal(from.get("nome"), nome));
+		}
+		
+6) Após terminar todos os AND, temos que juntar o trecho SELECT/FROM com os filtros, e quem faz isso é o WHERE:
+
+
+		//Com os filtros criado, agora falta juntar a parte do SELECT com o FILTRO, e quem faz isso é o WHERE
+		query.where(filtros);
+		
+7) Por fim, vamos executar essa Query (já retornando a lista de produto):
+
+		//Executando a QUERY
+		return em.createQuery(query).getResultList();
+		
+8) Veja como ficou o código todo:
+
+	//Busca mais flexivel, pode ser realizada por diversos parâmetros (todos são opcionais).
+	//Vamos usar o CRITERIA
+	public List<Produto> buscarPorParametros(String nome, BigDecimal preco, LocalDate dataCadasto) {
+		
+		CriteriaBuilder builder = em.getCriteriaBuilder();
+		CriteriaQuery<Produto> query = builder.createQuery(Produto.class);
+		
+		//Indica de onde será o FROM da query "JPQL"
+		//Por padrão o SELECT é igual o FROM, se fosse diferente poderiamos mudar com query.select()
+		Root<Produto> from = query.from(Produto.class);
+		
+		//Responsável por criar e juntar os filtros da query "JPQL"
+		Predicate filtros = builder.and();
+		if(nome != null && !nome.trim().isEmpty()) {
+			//Passo o valor atual do filtro (primeiro argumento)
+			//Depois passo o que eu quero adicionar ao filtro que estou construindo, por ser = uso o metodo equal()
+			filtros = builder.and(filtros, builder.equal(from.get("nome"), nome));
+		}
+		if(preco != null) {
+			filtros = builder.and(filtros, builder.equal(from.get("preco"), preco));
+		}
+		if(dataCadasto != null) {
+			filtros = builder.and(filtros, builder.equal(from.get("dataCadasto"), dataCadasto));
+		}
+		//Com os filtros criado, agora falta juntar a parte do SELECT com o FILTRO, e quem faz isso é o WHERE
+		query.where(filtros);
+		
+		//Executando a QUERY
+		return em.createQuery(query).getResultList();
+	}
+	
+
+Criamos a classe TesteCriteria com o metodo main() para trestar o metodo buscarPorParametros(). Nesta classe ainda há um método para
+povoar o banco de dados. Veja como ficou:
+
+public class TesteCriteria {
+
+	public static void main(String[] args) {
+		popularBancoDeDados();
+		EntityManager em = JPAUtil.getEntityManager();
+		ProdutoDao produtoDao = new ProdutoDao(em);
+		List<Produto> produtos = produtoDao.buscarPorParametros(null, null, LocalDate.now());
+		produtos.forEach(p -> System.out.println(p.getNome()));
+	}
+
+	private static void popularBancoDeDados() {
+		Categoria celulares = new Categoria("CELULARES");
+		Categoria videogames = new Categoria("VIDEOGAMES");
+		Categoria informatica = new Categoria("INFORMATICA");
+
+		Produto celular = new Produto("Xiaomi Redmi", "Muito legal", new BigDecimal("800"), celulares);
+		Produto videogame = new Produto("PS5", "Playstation 5", new BigDecimal("8000"), videogames);
+		Produto macbook = new Produto("Macbook", "Macboo pro retina", new BigDecimal("14000"), informatica);
+
+		EntityManager em = JPAUtil.getEntityManager();
+		ProdutoDao produtoDao = new ProdutoDao(em);
+		CategoriaDao categoriaDao = new CategoriaDao(em);
+
+		em.getTransaction().begin();
+
+		categoriaDao.cadastrar(celulares);
+		categoriaDao.cadastrar(videogames);
+		categoriaDao.cadastrar(informatica);
+
+		produtoDao.cadastrar(celular);
+		produtoDao.cadastrar(videogame);
+		produtoDao.cadastrar(macbook);
+
+		em.getTransaction().commit();
+		em.close();
+	}
+	
+}
+
+
+Desvantagem de se usar Criteria: é um código de difícil entendimento, complexo!
+

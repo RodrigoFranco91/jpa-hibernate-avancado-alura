@@ -1,0 +1,307 @@
+Neste capítulo falamos sobre diversos assuntos: embedded, mapeamento de herança e chave composta. 
+
+
+Há um recurso que facilita/simplifica as entidades. Esse recuros é o embedded. É comum haver classes com diversos atributos e o
+embedded podemos isolar esses atributos (que hoje são colunas de uma tabela) em outras classes (e mesmo assim continuarão a ser
+colunas do banco de dados, pois por padrão classe virá tabela, mas nesse caso não queremos isso).
+
+Veja a classe Cliente, ela tem o atributo nome e cpf. Vamos isolar esses em outra classe. Siga o passo a passo:
+
+1) Crie a classe DadosPessoais, com o atributo nome e cpf. Veja como ficou:
+
+	public class DadosPessoais {
+
+		private String nome;
+		private String cpf;
+		
+			
+		//Para a JPA
+		@Deprecated
+		public DadosPessoais() {
+
+		
+		}
+			
+		public DadosPessoais(String nome, String cpf) {
+			this.nome = nome;
+			this.cpf = cpf;
+		}
+		
+		public String getNome() {
+			return nome;
+		}
+		public String getCpf() {
+			return cpf;
+		}
+		
+	}
+	
+2) Na classe Cliente devemos tirar os atributos nome e cpf e criar um do tipo DadosPessoais. Lembre-se de apagar os métodos getter e
+setters dos atributos removidos e de alterar o corpo do metodo construtor de Cliente. Ficará assim:
+
+	@Entity
+	@Table(name = "clientes")
+	public class Cliente {
+		
+		@Id
+		@GeneratedValue(strategy = GenerationType.IDENTITY)
+		private Long id;
+		
+		private DadosPessoais dadosPessoais;
+
+		
+		//Somente para Hibernate
+		@Deprecated
+		public Cliente() {
+
+		}
+		
+		public Cliente(String nome, String cpf) {
+			this.dadosPessoais = new DadosPessoais(nome,cpf);
+		}
+
+		public Long getId() {
+			return id;
+		}
+
+		public void setId(Long id) {
+			this.id = id;
+		}
+		
+		public DadosPessoais getDadosPessoais() {
+			return dadosPessoais;
+		}
+
+	}
+	
+3) Temos que configurar o JPA/Hibernate dizendo que a classe DadosPessoais não será uma tabela e que seus atributos continuarão sendo
+colunas de outra Tabela/Classe e para isso devemos anotar a classe DadosPessoais com @Embeddable
+
+4) Temos que continuar a configuração do item anterior, agora na classe Cliente, em cima do atributo do tipo DadosPessoais devemos
+colocar a anotação @Embedded
+
+5) Fizemos a classe TesteCadastroClienteEmbedded para salvar um Cliente com DadosPessoais e ver que só tivemos uma tabela, a Cliente.
+Veja como ficou a classe:
+
+	public class TesteCadastroClienteEmbedded {
+		
+		public static void main(String[] args) {
+			
+			
+			EntityManager em = JPAUtil.getEntityManager();
+			
+			em.getTransaction().begin();
+			
+			Cliente cliente = new Cliente("Felipe", "000000000");
+			
+			em.persist(cliente);
+			
+			em.getTransaction().commit();
+			em.close();
+		}
+
+	}
+
+
+Mapeando Herança com JPA. Para exemplificar isso vamos criar a classe Livro com seus atributos específicos (Autor e Numero de 
+Páginas) e Livro será filho da classe Produto. Vamos também criar a classe Informatica que terá os atributos (Marca e Modelo).
+
+A JPA utiliza de várias estratégias para tratar a herança. Veremos duas:
+
+I - Single Table = Embora temos Classe Mãe e Classe Filha no Java, no banco de dados teremos apenas uma tabela e nessa tabela terá
+todos os atributos misturados (Nessa estratégia temos mais performance, mas fica bagunçado). A tabela ganha um atributo a mais para
+guardar o indicar a qual classe pertence aquele registro.
+
+II - JOINED = Neste caso teremos uma tabela para cada classe, ou se,a teremos tabelas para todos filhos e uma para mãe.
+É como se houvesse um relacionamento 1:N, onde a Mãe é o lado 1 e cada filho é o lado N. Os filhos ganham um atributo a mais, no 
+caso uma chave estrangeira com ID da Mãe.
+
+Siga o passo a passo para fazer isso:
+
+1) Vamos criar a classe Livro, que deve herdar de Produto. Tera seus atributos, o contrutor padrão o construtor com argumentos e os
+metodos getters. Veja como ficou:
+
+	@Entity
+	public class Livro extends Produto {
+
+		private String autor;
+		private Integer numeroDePagina;
+		
+		public Livro() {
+		}
+		
+		public Livro(String autor, Integer numeroDePagina) {
+			this.autor = autor;
+			this.numeroDePagina = numeroDePagina;
+		}
+
+		public String getAutor() {
+			return autor;
+		}
+
+		public Integer getNumeroDePagina() {
+			return numeroDePagina;
+		}
+		
+	}
+	
+2) Vamos criar a classe Informatica, que deve herdar de Produto. Tera seus atributos, o contrutor padrão o construtor com 
+argumentos e os metodos getters. Veja como ficou:
+
+	@Entity
+	public class Informatica extends Produto{
+
+		private String marca;
+		private Integer modelo;
+		
+		public Informatica() {
+
+		}
+		
+		public Informatica(String marca, Integer modelo) {
+			this.marca = marca;
+			this.modelo = modelo;
+		}
+
+		public String getMarca() {
+			return marca;
+		}
+
+		public Integer getModelo() {
+			return modelo;
+		}
+			
+	}
+
+3) Agora vamos aplicar uma das estrategias disponiveis (só temos que alterar a classe mãe). Veja:
+
+	Aplicando Single Table:
+	
+		Na classe mãe, no caso Produto devemos adicionar a seguinte anotação em cima da classe: @Inheritance(strategy = 
+		InheritanceType.SINGLE_TABLE)
+		
+	Aplicando Joined:
+	
+		Na classe mãe, no caso Produto devemos adicionar a seguinte anotação em cima da classe: @Inheritance(strategy = 
+		InheritanceType.JOINED)
+		
+4) Criamos a classe TesteCadastroLivro com o metodo main() para testar um cadastro de Livro. Veja como ficou:
+
+	public class TesteCadastroLivro {
+
+		
+		public static void main(String[] args) {
+			EntityManager em = JPAUtil.getEntityManager();
+			
+			em.getTransaction().begin();
+			
+			Livro livro = new Livro("Livro do Rodrigo", 100);
+			
+			em.persist(livro);
+			
+			em.getTransaction().commit();
+			em.close();
+		}
+	}
+
+
+
+Mapeando Chave Composta:
+
+Há banco de dados que exige que a chave identificadora da tabela seja composta, e o JPA suporta isso. Para isso teremos que criar
+uma classe que conterá os atributos que serão a chave, essa classe será anotada com @Embeddable. A classe que representa a tabela
+com chave composta terá um atributo do tipo da classe anotada com @Embeddable, e esse atributo será anotado com @EmbeddedId.
+Siga o passo a passo para implementar isso (vamos fazer a classe Categoria ter id composto):
+
+1) Crie a classe chamada CategoriaId, com os atributros que serão a chave identificadora. A classe deve ter o construtor padrão e um
+com os atributos, metodos Equals/Hashchode e implementar a interface Serializable. Veja como ficou:
+
+@Embeddable
+public class CategoriaId implements Serializable{
+	
+	private String nome;
+	private String tipo;
+	
+	@Deprecated
+	public CategoriaId() {
+
+	}
+	
+	public CategoriaId(String nome, String tipo) {
+		this.nome = nome;
+		this.tipo = tipo;
+	}
+	
+	public String getNome() {
+		return nome;
+	}
+	
+	public String getTipo() {
+		return tipo;
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(nome, tipo);
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (obj == null)
+			return false;
+		if (getClass() != obj.getClass())
+			return false;
+		CategoriaId other = (CategoriaId) obj;
+		return Objects.equals(nome, other.nome) && Objects.equals(tipo, other.tipo);
+	}
+		
+}
+	
+2) Na classe Categoria vamos tirar os seus atributos e criar um do tipo CategoriaId. Esse atributo deve ser anotado com @EmbeddedId
+Veja como ficou:
+
+	@Entity
+	@Table(name = "categorias")
+	public class Categoria {
+		
+		@EmbeddedId
+		private CategoriaId id;
+		
+		public Categoria() {
+		}
+		
+		public Categoria(String nome) {
+			this.id = new CategoriaId(nome, "Tipo1");
+		}
+
+		public String getNome() {
+			return this.id.getNome();
+		}
+
+
+	}
+
+3) Agora vamos testar como buscar uma classe com essa chave, ou seja, como executamos o método find(). Neste caso basta passar
+o primeiro parâmetro com o tipo de classe de retorno, no caso Categoria.class e passar como segundo argumento um objeto do tipo
+CategoriaID! Veja:
+
+- Criamos  a classe TesteBuscaChaveComposta com o metodo main()
+
+- O código ficou assim:
+
+	public class TesteBuscaChaveComposta {
+
+		public static void main(String[] args) {
+			
+			EntityManager em = JPAUtil.getEntityManager();
+			em.getTransaction().begin();
+			
+			CategoriaId categoriaID = new CategoriaId("CELULARES", "xpto");
+			Categoria categoria = em.find(Categoria.class, categoriaID);
+			
+			em.close();
+		}
+		
+	}
